@@ -38,3 +38,4 @@ docs/
 .idea/
 
 *.log
+reports.db

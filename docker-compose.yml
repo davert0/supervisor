@@ -7,6 +7,6 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
     volumes:
-      - ./reports.db:/app/reports.db
+      - ./data:/app/data
     env_file:
       - .env
