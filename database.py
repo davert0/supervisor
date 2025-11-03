@@ -61,6 +61,18 @@ class Database:
             ''', (user_id, username, first_name, last_name, user_type))
             await db.commit()
 
+    async def get_user_profile(self, user_id: int) -> Optional[dict]:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute('''
+                select user_id, username, first_name, last_name
+                from users
+                where user_id = ?
+            ''', (user_id,))
+            row = await cursor.fetchone()
+            if row:
+                return {'user_id': row[0], 'username': row[1], 'first_name': row[2], 'last_name': row[3]}
+            return None
+
     async def get_all_active_users(self) -> List[dict]:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
@@ -115,13 +127,14 @@ class Database:
         week_start = today - timedelta(days=days_since_monday)
         week_start_datetime = datetime.combine(week_start, datetime.min.time())
         
+        week_start_str = week_start_datetime.strftime('%Y-%m-%d %H:%M:%S')
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
                 select current_stage, plans, problems, created_at 
                 from reports 
                 where user_id = ? and created_at >= ?
                 order by created_at desc
-            ''', (user_id, week_start_datetime.isoformat()))
+            ''', (user_id, week_start_str))
             rows = await cursor.fetchall()
             return [{'current_stage': row[0], 'plans': row[1], 'problems': row[2], 'created_at': row[3]} for row in rows]
 
@@ -131,6 +144,7 @@ class Database:
         week_start = today - timedelta(days=days_since_monday)
         week_start_datetime = datetime.combine(week_start, datetime.min.time())
 
+        week_start_str = week_start_datetime.strftime('%Y-%m-%d %H:%M:%S')
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
                 select
@@ -149,7 +163,7 @@ class Database:
                 group by csr.curator_id, c.username, c.first_name, c.last_name, s.user_id, s.username, s.first_name, s.last_name
                 having max(r.created_at) is null
                 order by csr.curator_id, s.first_name, s.last_name
-            ''', (week_start_datetime.isoformat(),))
+            ''', (week_start_str,))
             rows = await cursor.fetchall()
             return [
                 {

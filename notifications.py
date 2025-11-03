@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import Optional
 from aiogram import Bot
 from database import Database
 
@@ -10,16 +11,30 @@ class NotificationService:
         self.bot = bot
         self.db = db
 
+    def _format_user_name(self, user: Optional[dict], fallback_id: int) -> str:
+        if not user:
+            return f"ID: {fallback_id}"
+        first_name = user.get('first_name')
+        last_name = user.get('last_name')
+        if first_name and last_name:
+            return f"{first_name} {last_name}"
+        username = user.get('username')
+        if username:
+            return username
+        return f"ID: {fallback_id}"
+
     async def notify_curator_new_report(self, student_id: int, report_data: dict):
         """Уведомляет куратора о новом отчете от ученика"""
         curator = await self.db.get_student_curator(student_id)
         if not curator:
             return
+        student_profile = await self.db.get_user_profile(student_id)
+        student_name = self._format_user_name(student_profile, student_id)
         
         try:
             await self.bot.send_message(
                 curator['user_id'],
-                f"📝 *Новый отчет от ученика!*\n\n"
+                f"📝 *Новый отчет от {student_name}!*\n\n"
                 f"🎯 *Этап:* {report_data['current_stage']}\n"
                 f"📋 *Планы:* {report_data['plans']}\n"
                 f"❓ *Проблемы:* {report_data['problems']}\n\n"

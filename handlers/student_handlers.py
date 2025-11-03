@@ -159,7 +159,6 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
         current_week_reports = await db.get_reports_for_current_week(user_id)
         next_report_info = ""
         if current_week_reports:
-            from datetime import datetime
             report_date = datetime.fromisoformat(current_week_reports[0]['created_at'])
             next_report_info = f"\n⏰ Отчет за эту неделю уже отправлен ({report_date.strftime('%d.%m.%Y')})\n📅 Следующий отчет можно отправить в понедельник"
         else:
@@ -391,7 +390,7 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
             f"🎯 *Этап:* {data['current_stage']}\n"
             f"📋 *Планы:* {data['plans']}\n"
             f"❓ *Проблемы:* {message.text}\n\n"
-            "Спасибо за твойу работу! Следующее напоминание придет через неделю.",
+            "Спасибо за твою работу! Следующее напоминание придет через неделю.",
             reply_markup=student_keyboard,
             parse_mode='Markdown'
         )
