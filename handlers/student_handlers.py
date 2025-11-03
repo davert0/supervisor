@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from states import ReportStates
 from database import Database
 from notifications import NotificationService
+from text_utils import escape_markdown
 
 STAGE_OPTIONS = [
     (
@@ -142,7 +143,8 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
         message_text = "📝 Начинаем заполнение еженедельного отчета!\n\n*Выбери свой текущий этап:*"
         
         if last_stage:
-            message_text += f"\n\n💡 *Рекомендация:* В прошлый раз ты выбрал '{last_stage}'"
+            last_stage_display = escape_markdown(last_stage)
+            message_text += f"\n\n💡 *Рекомендация:* В прошлый раз ты выбрал `{last_stage_display}`"
         
         await message.answer(message_text, reply_markup=stage_keyboard, parse_mode='Markdown')
 
@@ -167,20 +169,30 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
         response = "📊 Твои отчеты:\n\n"
         for i, report in enumerate(reports[:5], 1):
             date = datetime.fromisoformat(report['created_at']).strftime('%d.%m.%Y')
-            response += f"*{i}. {date}*\n"
-            response += f"🎯 Этап: {report['current_stage']}\n"
-            response += f"📋 Планы: {report['plans'][:50]}{'...' if len(report['plans']) > 50 else ''}\n"
+            stage = escape_markdown(report['current_stage'])
+            plans_preview_raw = report['plans'][:50]
+            plans_preview = escape_markdown(plans_preview_raw)
+            plans_suffix = '...' if len(report['plans']) > 50 else ''
             
-            # Показываем информацию о выполнении планов, если есть
+            response += f"*{i}. {date}*\n"
+            response += f"🎯 Этап: {stage}\n"
+            response += f"📋 Планы: {plans_preview}{plans_suffix}\n"
+            
             if report['plans_completed'] is not None:
                 if report['plans_completed']:
                     response += f"✅ Выполнение планов: Да\n"
                 else:
                     response += f"❌ Выполнение планов: Нет\n"
                     if report['plans_failure_reason']:
-                        response += f"📝 Причина: {report['plans_failure_reason'][:50]}{'...' if len(report['plans_failure_reason']) > 50 else ''}\n"
+                        reason_preview_raw = report['plans_failure_reason'][:50]
+                        reason_preview = escape_markdown(reason_preview_raw)
+                        reason_suffix = '...' if len(report['plans_failure_reason']) > 50 else ''
+                        response += f"📝 Причина: {reason_preview}{reason_suffix}\n"
             
-            response += f"❓ Проблемы: {report['problems'][:50]}{'...' if len(report['problems']) > 50 else ''}\n\n"
+            problems_preview_raw = report['problems'][:50]
+            problems_preview = escape_markdown(problems_preview_raw)
+            problems_suffix = '...' if len(report['problems']) > 50 else ''
+            response += f"❓ Проблемы: {problems_preview}{problems_suffix}\n\n"
         
         if len(reports) > 5:
             response += f"... и еще {len(reports) - 5} отчетов"
@@ -205,11 +217,10 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
                 one_time_keyboard=True
             )
             
-            # Проверяем, есть ли у пользователя предыдущие отчеты
             has_previous = await db.has_previous_reports(callback.from_user.id)
+            selected_stage_display = escape_markdown(selected_stage)
             
             if has_previous:
-                # Если есть предыдущие отчеты, переходим к вопросу о выполнении планов
                 await state.set_state(ReportStates.waiting_for_plans_completion)
                 completion_keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
@@ -219,7 +230,7 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
                 )
                 
                 await callback.message.edit_text(
-                    f"✅ *Выбран этап:* {selected_stage}\n\n"
+                    f"✅ *Выбран этап:* {selected_stage_display}\n\n"
                     "*Удалось ли выполнить все запланированное на этой неделе?*",
                     parse_mode='Markdown'
                 )
@@ -228,9 +239,8 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
                     reply_markup=completion_keyboard
                 )
             else:
-                # Если первый отчет, переходим к обычному вопросу о планах
                 await callback.message.edit_text(
-                    f"✅ *Выбран этап:* {selected_stage}\n\n"
+                    f"✅ *Выбран этап:* {selected_stage_display}\n\n"
                     "*Что планируешь делать на следующую неделю?*\n\n"
                     "Опиши свои планы:",
                     parse_mode='Markdown'
@@ -385,11 +395,14 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
         )
         
         await state.clear()
+        current_stage_display = escape_markdown(data['current_stage'])
+        plans_display = escape_markdown(data['plans'])
+        problems_display = escape_markdown(message.text)
         await message.answer(
             "✅ *Отчет сохранен!*\n\n"
-            f"🎯 *Этап:* {data['current_stage']}\n"
-            f"📋 *Планы:* {data['plans']}\n"
-            f"❓ *Проблемы:* {message.text}\n\n"
+            f"🎯 *Этап:* {current_stage_display}\n"
+            f"📋 *Планы:* {plans_display}\n"
+            f"❓ *Проблемы:* {problems_display}\n\n"
             "Спасибо за твою работу! Следующее напоминание придет через неделю.",
             reply_markup=student_keyboard,
             parse_mode='Markdown'

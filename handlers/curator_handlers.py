@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from states import CuratorStates
 from database import Database
 from notifications import NotificationService
+from text_utils import escape_markdown
 
 def register_curator_handlers(dp: Dispatcher, db: Database, notification_service: NotificationService):
     
@@ -14,8 +15,10 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         read_status = "✅ Прочитано" if report['is_read_by_curator'] else "📭 Не прочитано"
         
         text = f"*{index}. {date}* {read_status}\n"
-        text += f"🎯 *Этап:* {report['current_stage']}\n"
-        text += f"📋 *Планы:* {report['plans']}\n"
+        stage = escape_markdown(report['current_stage'])
+        plans = escape_markdown(report['plans'])
+        text += f"🎯 *Этап:* {stage}\n"
+        text += f"📋 *Планы:* {plans}\n"
         
         if report['plans_completed'] is not None:
             if report['plans_completed']:
@@ -23,9 +26,11 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
             else:
                 text += f"❌ *Выполнение планов:* Нет\n"
                 if report['plans_failure_reason']:
-                    text += f"📝 *Причина:* {report['plans_failure_reason']}\n"
+                    failure_reason = escape_markdown(report['plans_failure_reason'])
+                    text += f"📝 *Причина:* {failure_reason}\n"
         
-        text += f"❓ *Проблемы:* {report['problems']}\n\n"
+        problems = escape_markdown(report['problems'])
+        text += f"❓ *Проблемы:* {problems}\n\n"
         return text
     
     curator_keyboard = ReplyKeyboardMarkup(
@@ -125,7 +130,7 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         students = await db.get_curator_students(curator_id)
         
         if not students:
-            await message.answer("У тебя пока нет учеников. Используй /add_student для добавления.")
+            await message.answer("У тебя пока нет учеников. Используй команду `/add_student` для добавления.")
             return
         
         response = "👥 *Твои ученики:*\n\n"
@@ -133,7 +138,8 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         
         for student in students:
             name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
-            response += f"• {name} (ID: {student['user_id']})\n"
+            display_name = escape_markdown(name)
+            response += f"• {display_name} (ID: {student['user_id']})\n"
             keyboard_buttons.append([InlineKeyboardButton(
                 text=f"📋 Отчеты {name}",
                 callback_data=f"view_reports_{student['user_id']}"
@@ -153,12 +159,12 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         response = "👥 *Все ученики и их кураторы:*\n\n"
         
         for student in students:
-            # Формируем имя ученика
-            student_name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            student_name_raw = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            student_name = escape_markdown(student_name_raw)
             
-            # Формируем имя куратора
             if student['curator_id']:
-                curator_name = f"{student['curator_first_name']} {student['curator_last_name']}" if student['curator_first_name'] and student['curator_last_name'] else student['curator_username'] or f"ID: {student['curator_id']}"
+                curator_name_raw = f"{student['curator_first_name']} {student['curator_last_name']}" if student['curator_first_name'] and student['curator_last_name'] else student['curator_username'] or f"ID: {student['curator_id']}"
+                curator_name = escape_markdown(curator_name_raw)
                 curator_status = f"👨‍🏫 {curator_name}"
             else:
                 curator_status = "❌ Без куратора"
@@ -189,17 +195,21 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         
         for report in reports[:5]:  # Показываем максимум 5 отчетов
             date = datetime.fromisoformat(report['created_at']).strftime('%d.%m.%Y %H:%M')
+            student_name = escape_markdown(report['student_name'])
+            report_stage = escape_markdown(report['current_stage'])
+            report_plans = escape_markdown(report['plans'])
+            report_problems = escape_markdown(report['problems'])
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Отметить как прочитанный", callback_data=f"read_{report['id']}")]
             ])
             
             await message.answer(
-                f"📝 *Отчет от {report['student_name']}*\n"
+                f"📝 *Отчет от {student_name}*\n"
                 f"📅 {date}\n\n"
-                f"🎯 *Этап:* {report['current_stage']}\n"
-                f"📋 *Планы:* {report['plans']}\n"
-                f"❓ *Проблемы:* {report['problems']}",
+                f"🎯 *Этап:* {report_stage}\n"
+                f"📋 *Планы:* {report_plans}\n"
+                f"❓ *Проблемы:* {report_problems}",
                 reply_markup=keyboard
             )
         
@@ -234,7 +244,8 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
             await callback.answer("У этого ученика пока нет отчетов.")
             return
         
-        student_name = reports[0]['student_name'] if reports else f"ID: {student_id}"
+        student_name_raw = reports[0]['student_name'] if reports else f"ID: {student_id}"
+        student_name = escape_markdown(student_name_raw)
         header = f"📋 *Все отчеты ученика {student_name}:*\n\n"
         
         response = header

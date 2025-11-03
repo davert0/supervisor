@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 from aiogram import Bot
 from database import Database
+from text_utils import escape_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +14,15 @@ class NotificationService:
 
     def _format_user_name(self, user: Optional[dict], fallback_id: int) -> str:
         if not user:
-            return f"ID: {fallback_id}"
+            return escape_markdown(f"ID: {fallback_id}")
         first_name = user.get('first_name')
         last_name = user.get('last_name')
         if first_name and last_name:
-            return f"{first_name} {last_name}"
+            return escape_markdown(f"{first_name} {last_name}")
         username = user.get('username')
         if username:
-            return username
-        return f"ID: {fallback_id}"
+            return escape_markdown(username)
+        return escape_markdown(f"ID: {fallback_id}")
 
     async def notify_curator_new_report(self, student_id: int, report_data: dict):
         """Уведомляет куратора о новом отчете от ученика"""
@@ -32,13 +33,16 @@ class NotificationService:
         student_name = self._format_user_name(student_profile, student_id)
         
         try:
+            report_stage = escape_markdown(report_data['current_stage'])
+            report_plans = escape_markdown(report_data['plans'])
+            report_problems = escape_markdown(report_data['problems'])
             await self.bot.send_message(
                 curator['user_id'],
                 f"📝 *Новый отчет от {student_name}!*\n\n"
-                f"🎯 *Этап:* {report_data['current_stage']}\n"
-                f"📋 *Планы:* {report_data['plans']}\n"
-                f"❓ *Проблемы:* {report_data['problems']}\n\n"
-                f"Используйте /reports для просмотра всех отчетов."
+                f"🎯 *Этап:* {report_stage}\n"
+                f"📋 *Планы:* {report_plans}\n"
+                f"❓ *Проблемы:* {report_problems}\n\n"
+                f"Используйте `/reports` для просмотра всех отчетов."
             )
         except Exception as e:
             logger.error(f"Не удалось уведомить куратора {curator['user_id']}: {e}")
@@ -57,12 +61,15 @@ class NotificationService:
     async def notify_student_report_read(self, student_id: int, report_data: dict):
         """Уведомляет ученика о том, что куратор просмотрел его отчет"""
         try:
+            report_stage = escape_markdown(report_data['current_stage'])
+            report_plans = escape_markdown(report_data['plans'])
+            report_problems = escape_markdown(report_data['problems'])
             await self.bot.send_message(
                 student_id,
                 "✅ *Твой отчет просмотрен куратором!*\n\n"
-                f"🎯 *Этап:* {report_data['current_stage']}\n"
-                f"📋 *Планы:* {report_data['plans']}\n"
-                f"❓ *Проблемы:* {report_data['problems']}"
+                f"🎯 *Этап:* {report_stage}\n"
+                f"📋 *Планы:* {report_plans}\n"
+                f"❓ *Проблемы:* {report_problems}"
             )
         except Exception as e:
             logger.error(f"Не удалось уведомить ученика {student_id}: {e}")
@@ -98,10 +105,10 @@ class NotificationService:
 
         def build_name(first_name, last_name, username, fallback_id):
             if first_name and last_name:
-                return f"{first_name} {last_name}"
+                return escape_markdown(f"{first_name} {last_name}")
             if username:
-                return username
-            return f"ID: {fallback_id}"
+                return escape_markdown(username)
+            return escape_markdown(f"ID: {fallback_id}")
 
         students_by_curator = {}
         for record in missing_records:

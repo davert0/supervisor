@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from states import AdminStates
 from database import Database
 from notifications import NotificationService
+from text_utils import escape_markdown
 
 def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: NotificationService):
     
@@ -68,7 +69,8 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
         
         for curator in curators:
             stats = await db.get_curator_stats(curator['user_id'])
-            name = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+            name_raw = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+            name = escape_markdown(name_raw)
             
             response += f"*{name}* (ID: {curator['user_id']})\n"
             response += f"   👥 Учеников: {stats['student_count']}\n"
@@ -114,7 +116,8 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
         
         response = "👥 *Выбери ученика для назначения куратора:*\n\n"
         for i, student in enumerate(display_students, 1):
-            name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            name_raw = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            name = escape_markdown(name_raw)
             response += f"{i}. {name} (ID: {student['user_id']})\n"
         
         if len(students) > 10:
@@ -153,7 +156,7 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
             await state.clear()
             await message.answer(
                 f"✅ Пользователь с ID {curator_id} назначен куратором!\n"
-                f"Теперь он может использовать команду /curator для активации режима куратора.",
+                f"Теперь он может использовать команду `/curator` для активации режима куратора.",
                 reply_markup=admin_keyboard
             )
 
@@ -182,12 +185,15 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
             await state.set_state(AdminStates.waiting_for_curator_to_assign)
 
             curators = data['curators']
-            response = f"👤 *Выбран ученик:* {student['first_name']} {student['last_name']} (ID: {student['user_id']})\n\n"
+            student_name_raw = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            student_name = escape_markdown(student_name_raw)
+            response = f"👤 *Выбран ученик:* {student_name} (ID: {student['user_id']})\n\n"
             response += "👥 *Выбери куратора из списка ниже:*\n\n"
 
             for i, curator in enumerate(curators, 1):
-                name = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
-                response += f"{i}. {name} (ID: {curator['user_id']})\n"
+                curator_name_raw = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+                curator_name = escape_markdown(curator_name_raw)
+                response += f"{i}. {curator_name} (ID: {curator['user_id']})\n"
 
             response += f"\nОтправьте номер куратора. Для возврата нажмите '{BACK_BUTTON_TEXT}'."
             await message.answer(response, reply_markup=back_keyboard)
@@ -220,10 +226,15 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
             await db.assign_student_to_curator(student['user_id'], curator['user_id'])
             await state.clear()
 
+            student_name_raw = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            curator_name_raw = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+            student_name = escape_markdown(student_name_raw)
+            curator_name = escape_markdown(curator_name_raw)
+
             await message.answer(
                 f"✅ *Назначение выполнено!*\n\n"
-                f"👤 Ученик: {student['first_name']} {student['last_name']} (ID: {student['user_id']})\n"
-                f"👨‍🏫 Куратор: {curator['first_name']} {curator['last_name']} (ID: {curator['user_id']})\n\n"
+                f"👤 Ученик: {student_name} (ID: {student['user_id']})\n"
+                f"👨‍🏫 Куратор: {curator_name} (ID: {curator['user_id']})\n\n"
                 f"Теперь куратор будет получать уведомления об отчетах этого ученика.",
                 reply_markup=admin_keyboard
             )
@@ -262,9 +273,12 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
             await db.remove_curator_student_relation(curator['user_id'], student_id)
             await state.clear()
 
+            curator_name_raw = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+            curator_name = escape_markdown(curator_name_raw)
+
             await message.answer(
                 f"✅ Связь с куратором удалена для ученика ID {student_id}.\n"
-                f"Куратор: {curator['first_name']} {curator['last_name']}",
+                f"Куратор: {curator_name}",
                 reply_markup=admin_keyboard
             )
         else:
@@ -311,7 +325,8 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
         
         response = "👥 *Ученики без кураторов:*\n\n"
         for student in students:
-            name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            name_raw = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            name = escape_markdown(name_raw)
             response += f"• {name} (ID: {student['user_id']})\n"
         
         response += f"\n📊 Всего без кураторов: {len(students)}"
@@ -340,7 +355,8 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
             response += "📈 *Статистика по кураторам:*\n"
             for curator in curators[:5]:
                 stats = await db.get_curator_stats(curator['user_id'])
-                name = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+                name_raw = f"{curator['first_name']} {curator['last_name']}" if curator['first_name'] and curator['last_name'] else curator['username'] or f"ID: {curator['user_id']}"
+                name = escape_markdown(name_raw)
                 response += f"• {name}: {stats['student_count']} учеников, {stats['unread_reports']} непрочитанных\n"
             
             if len(curators) > 5:
@@ -362,12 +378,12 @@ def register_admin_handlers(dp: Dispatcher, db: Database, notification_service: 
         response = "👥 *Все ученики в системе:*\n\n"
         
         for student in students:
-            # Формируем имя ученика
-            student_name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            student_name_raw = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
+            student_name = escape_markdown(student_name_raw)
             
-            # Формируем имя куратора
             if student['curator_id']:
-                curator_name = f"{student['curator_first_name']} {student['curator_last_name']}" if student['curator_first_name'] and student['curator_last_name'] else student['curator_username'] or f"ID: {student['curator_id']}"
+                curator_name_raw = f"{student['curator_first_name']} {student['curator_last_name']}" if student['curator_first_name'] and student['curator_last_name'] else student['curator_username'] or f"ID: {student['curator_id']}"
+                curator_name = escape_markdown(curator_name_raw)
                 curator_status = f"👨‍🏫 {curator_name}"
             else:
                 curator_status = "❌ Без куратора"
