@@ -342,3 +342,79 @@ async def test_get_user_type_returns_correct_type(db):
     
     assert user_type == "curator"
 
+
+@pytest.mark.asyncio
+async def test_get_all_student_reports_for_curator_returns_reports(db):
+    await db.add_user(10, username="curator", first_name="Cur", last_name="Ator", user_type="curator")
+    await db.add_user(1, username="student1", first_name="Stu", last_name="Dent", user_type="student")
+    await db.add_user(2, username="student2", user_type="student")
+    
+    await db.add_curator_student_relation(10, 1)
+    await db.add_curator_student_relation(10, 2)
+    
+    await db.save_report(1, "stage1", "plan1", "problem1", plans_completed=True)
+    await db.save_report(1, "stage2", "plan2", "problem2", plans_completed=False, plans_failure_reason="reason")
+    await db.save_report(2, "stage3", "plan3", "problem3")
+    
+    reports = await db.get_all_student_reports_for_curator(10, 1)
+    
+    assert len(reports) == 2
+    assert all(r["user_id"] == 1 for r in reports)
+    stages = {r["current_stage"] for r in reports}
+    assert stages == {"stage1", "stage2"}
+    stage1_report = next(r for r in reports if r["current_stage"] == "stage1")
+    stage2_report = next(r for r in reports if r["current_stage"] == "stage2")
+    assert stage1_report["plans_completed"] is True
+    assert stage2_report["plans_completed"] is False
+    assert stage2_report["plans_failure_reason"] == "reason"
+    assert "Stu Dent" in reports[0]["student_name"]
+
+
+@pytest.mark.asyncio
+async def test_get_all_student_reports_for_curator_returns_empty_for_no_reports(db):
+    await db.add_user(10, username="curator", user_type="curator")
+    await db.add_user(1, username="student1", user_type="student")
+    
+    await db.add_curator_student_relation(10, 1)
+    
+    reports = await db.get_all_student_reports_for_curator(10, 1)
+    
+    assert len(reports) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_all_student_reports_for_curator_checks_access(db):
+    await db.add_user(10, username="curator1", user_type="curator")
+    await db.add_user(20, username="curator2", user_type="curator")
+    await db.add_user(1, username="student1", user_type="student")
+    
+    await db.add_curator_student_relation(10, 1)
+    await db.save_report(1, "stage1", "plan1", "problem1")
+    
+    reports_curator1 = await db.get_all_student_reports_for_curator(10, 1)
+    reports_curator2 = await db.get_all_student_reports_for_curator(20, 1)
+    
+    assert len(reports_curator1) == 1
+    assert len(reports_curator2) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_all_student_reports_for_curator_includes_read_status(db):
+    await db.add_user(10, username="curator", user_type="curator")
+    await db.add_user(1, username="student1", user_type="student")
+    
+    await db.add_curator_student_relation(10, 1)
+    await db.save_report(1, "stage1", "plan1", "problem1")
+    
+    async with aiosqlite.connect(db.db_path) as connection:
+        cursor = await connection.execute("select id from reports where user_id = ?", (1,))
+        row = await cursor.fetchone()
+        report_id = row[0]
+    
+    await db.mark_report_as_read(report_id, 10)
+    
+    reports = await db.get_all_student_reports_for_curator(10, 1)
+    
+    assert len(reports) == 1
+    assert reports[0]["is_read_by_curator"] is True
+

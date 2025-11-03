@@ -9,7 +9,25 @@ from notifications import NotificationService
 
 def register_curator_handlers(dp: Dispatcher, db: Database, notification_service: NotificationService):
     
-    # Создаем клавиатуру для кураторов
+    def format_report_text(report: dict, index: int) -> str:
+        date = datetime.fromisoformat(report['created_at']).strftime('%d.%m.%Y %H:%M')
+        read_status = "✅ Прочитано" if report['is_read_by_curator'] else "📭 Не прочитано"
+        
+        text = f"*{index}. {date}* {read_status}\n"
+        text += f"🎯 *Этап:* {report['current_stage']}\n"
+        text += f"📋 *Планы:* {report['plans']}\n"
+        
+        if report['plans_completed'] is not None:
+            if report['plans_completed']:
+                text += f"✅ *Выполнение планов:* Да\n"
+            else:
+                text += f"❌ *Выполнение планов:* Нет\n"
+                if report['plans_failure_reason']:
+                    text += f"📝 *Причина:* {report['plans_failure_reason']}\n"
+        
+        text += f"❓ *Проблемы:* {report['problems']}\n\n"
+        return text
+    
     curator_keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="👤 Добавить ученика"), KeyboardButton(text="👥 Мои ученики")],
@@ -111,11 +129,18 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
             return
         
         response = "👥 *Твои ученики:*\n\n"
+        keyboard_buttons = []
+        
         for student in students:
             name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
             response += f"• {name} (ID: {student['user_id']})\n"
+            keyboard_buttons.append([InlineKeyboardButton(
+                text=f"📋 Отчеты {name}",
+                callback_data=f"view_reports_{student['user_id']}"
+            )])
         
-        await message.answer(response)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        await message.answer(response, reply_markup=keyboard)
 
     @dp.message(Command("all_students"))
     async def all_students_handler(message: Message):
@@ -188,7 +213,6 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         
         await db.mark_report_as_read(report_id, curator_id)
         
-        # Получаем информацию об отчете для уведомления ученика
         report = await db.get_report_by_id(report_id)
         if report:
             await notification_service.notify_student_report_read(report['user_id'], report)
@@ -198,6 +222,50 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
             callback.message.text + "\n\n✅ *ПРОЧИТАНО*",
             reply_markup=None
         )
+
+    @dp.callback_query(lambda c: c.data.startswith('view_reports_'))
+    async def view_student_reports(callback: CallbackQuery):
+        student_id = int(callback.data.split('_')[2])
+        curator_id = callback.from_user.id
+        
+        reports = await db.get_all_student_reports_for_curator(curator_id, student_id)
+        
+        if not reports:
+            await callback.answer("У этого ученика пока нет отчетов.")
+            return
+        
+        student_name = reports[0]['student_name'] if reports else f"ID: {student_id}"
+        header = f"📋 *Все отчеты ученика {student_name}:*\n\n"
+        
+        response = header
+        for i, report in enumerate(reports, 1):
+            response += format_report_text(report, i)
+        
+        response += f"📊 *Всего отчетов:* {len(reports)}"
+        
+        if len(response) > 4096:
+            chunks = []
+            current_chunk = header
+            
+            for i, report in enumerate(reports, 1):
+                report_text = format_report_text(report, i)
+                
+                if len(current_chunk) + len(report_text) > 4000:
+                    chunks.append(current_chunk)
+                    current_chunk = report_text
+                else:
+                    current_chunk += report_text
+            
+            if current_chunk:
+                current_chunk += f"\n📊 *Всего отчетов:* {len(reports)}"
+                chunks.append(current_chunk)
+            
+            for chunk in chunks:
+                await callback.message.answer(chunk)
+        else:
+            await callback.message.answer(response)
+        
+        await callback.answer()
 
     # Обработчики кнопок для кураторов
     @dp.message(lambda message: message.text == "👤 Добавить ученика")

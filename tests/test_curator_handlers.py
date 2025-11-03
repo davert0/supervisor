@@ -26,6 +26,7 @@ def setup_curator_handlers():
     db.get_unread_reports_for_curator = AsyncMock()
     db.mark_report_as_read = AsyncMock()
     db.get_report_by_id = AsyncMock()
+    db.get_all_student_reports_for_curator = AsyncMock()
 
     notification_service = SimpleNamespace(
         notify_student_curator_assigned=AsyncMock(),
@@ -181,9 +182,14 @@ async def test_my_students_handler_shows_students_list(setup_curator_handlers):
     await handler(message)
 
     assert len(message.answers) == 1
-    assert "твои ученики" in message.answers[0][0].lower()
-    assert "Stu Dent" in message.answers[0][0]
-    assert "student2" in message.answers[0][0]
+    text, kwargs = message.answers[0]
+    assert "твои ученики" in text.lower()
+    assert "Stu Dent" in text
+    assert "student2" in text
+    assert kwargs.get("reply_markup") is not None
+    keyboard = kwargs["reply_markup"]
+    assert len(keyboard.inline_keyboard) == 2
+    assert "отчеты" in keyboard.inline_keyboard[0][0].text.lower()
 
 
 @pytest.mark.asyncio
@@ -305,4 +311,125 @@ async def test_mark_report_read_without_report_found(setup_curator_handlers):
 
     db.mark_report_as_read.assert_awaited_once_with(3, 7)
     notification_service.notify_student_report_read.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_view_student_reports_shows_all_reports(setup_curator_handlers):
+    dispatcher, db, _ = setup_curator_handlers
+    handler = dispatcher.callback_handlers["view_student_reports"]
+    callback_message = FakeCallbackMessage()
+    callback = FakeCallbackQuery(user_id=10, data="view_reports_1", message=callback_message)
+    
+    db.get_all_student_reports_for_curator.return_value = [
+        {
+            "id": 1,
+            "current_stage": "stage1",
+            "plans": "plan1",
+            "problems": "problem1",
+            "plans_completed": True,
+            "plans_failure_reason": None,
+            "is_read_by_curator": False,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "student_name": "Stu Dent"
+        },
+        {
+            "id": 2,
+            "current_stage": "stage2",
+            "plans": "plan2",
+            "problems": "problem2",
+            "plans_completed": False,
+            "plans_failure_reason": "reason",
+            "is_read_by_curator": True,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "student_name": "Stu Dent"
+        }
+    ]
+
+    await handler(callback)
+
+    db.get_all_student_reports_for_curator.assert_awaited_once_with(10, 1)
+    assert len(callback_message.answers) == 1
+    text = callback_message.answers[0][0]
+    assert "все отчеты ученика" in text.lower()
+    assert "Stu Dent" in text
+    assert "stage1" in text
+    assert "stage2" in text
+    assert "прочитано" in text.lower()
+    assert "не прочитано" in text.lower()
+    assert "всего отчетов" in text.lower() and "2" in text
+
+
+@pytest.mark.asyncio
+async def test_view_student_reports_shows_no_reports_message(setup_curator_handlers):
+    dispatcher, db, _ = setup_curator_handlers
+    handler = dispatcher.callback_handlers["view_student_reports"]
+    callback_message = FakeCallbackMessage()
+    callback = FakeCallbackQuery(user_id=10, data="view_reports_1", message=callback_message)
+    
+    db.get_all_student_reports_for_curator.return_value = []
+
+    await handler(callback)
+
+    db.get_all_student_reports_for_curator.assert_awaited_once_with(10, 1)
+    assert len(callback.answers) == 1
+    assert "нет отчетов" in callback.answers[0][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_view_student_reports_shows_plans_completion_info(setup_curator_handlers):
+    dispatcher, db, _ = setup_curator_handlers
+    handler = dispatcher.callback_handlers["view_student_reports"]
+    callback_message = FakeCallbackMessage()
+    callback = FakeCallbackQuery(user_id=10, data="view_reports_1", message=callback_message)
+    
+    db.get_all_student_reports_for_curator.return_value = [
+        {
+            "id": 1,
+            "current_stage": "stage1",
+            "plans": "plan1",
+            "problems": "problem1",
+            "plans_completed": False,
+            "plans_failure_reason": "some reason",
+            "is_read_by_curator": False,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "student_name": "Student"
+        }
+    ]
+
+    await handler(callback)
+
+    text = callback_message.answers[0][0]
+    assert "выполнение планов" in text.lower() and "нет" in text.lower()
+    assert "причина" in text.lower() and "some reason" in text
+
+
+@pytest.mark.asyncio
+async def test_view_student_reports_splits_long_messages(setup_curator_handlers):
+    dispatcher, db, _ = setup_curator_handlers
+    handler = dispatcher.callback_handlers["view_student_reports"]
+    callback_message = FakeCallbackMessage()
+    callback = FakeCallbackQuery(user_id=10, data="view_reports_1", message=callback_message)
+    
+    long_text = "x" * 2000
+    reports = []
+    for i in range(5):
+        reports.append({
+            "id": i + 1,
+            "current_stage": f"stage{i}",
+            "plans": long_text,
+            "problems": long_text,
+            "plans_completed": None,
+            "plans_failure_reason": None,
+            "is_read_by_curator": False,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "student_name": "Student"
+        })
+    
+    db.get_all_student_reports_for_curator.return_value = reports
+
+    await handler(callback)
+
+    assert len(callback_message.answers) > 1
+    total_text = "".join([ans[0] for ans in callback_message.answers])
+    assert "всего отчетов" in total_text.lower() and "5" in total_text
 

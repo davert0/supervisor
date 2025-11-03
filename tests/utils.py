@@ -77,12 +77,19 @@ class FakeCallbackMessage:
     def __init__(self, text=""):
         self.text = text
         self.edits: List[Tuple[str, Dict]] = []
+        self.answers: List[Tuple[str, Dict]] = []
 
     async def edit_text(self, text, **kwargs):
         self.edits.append((text, kwargs))
     
+    async def answer(self, text, **kwargs):
+        self.answers.append((text, kwargs))
+    
     def get_last_edit_text(self) -> str:
         return self.edits[-1][0] if self.edits else ""
+    
+    def get_last_answer_text(self) -> str:
+        return self.answers[-1][0] if self.answers else ""
 
 
 class FakeCallbackQuery:

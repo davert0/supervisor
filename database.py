@@ -282,6 +282,26 @@ class Database:
                 }
             return None
 
+    async def get_all_student_reports_for_curator(self, curator_id: int, student_id: int) -> List[dict]:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute('''
+                select r.id, r.user_id, r.current_stage, r.plans, r.problems, r.plans_completed, 
+                       r.plans_failure_reason, r.is_read_by_curator, r.created_at,
+                       u.first_name, u.last_name, u.username
+                from reports r
+                join users u on r.user_id = u.user_id
+                join curator_student_relations csr on u.user_id = csr.student_id
+                where csr.curator_id = ? and r.user_id = ?
+                order by r.created_at desc
+            ''', (curator_id, student_id))
+            rows = await cursor.fetchall()
+            return [{
+                'id': row[0], 'user_id': row[1], 'current_stage': row[2], 'plans': row[3], 
+                'problems': row[4], 'plans_completed': bool(row[5]) if row[5] is not None else None, 
+                'plans_failure_reason': row[6], 'is_read_by_curator': bool(row[7]),
+                'created_at': row[8], 'student_name': f"{row[9]} {row[10]}" if row[9] and row[10] else row[11] or f"ID: {student_id}"
+            } for row in rows]
+
     async def get_all_students_with_curators(self) -> List[dict]:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute('''
