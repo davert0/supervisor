@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock
 
+import text_utils
 from notifications import NotificationService
 
 
@@ -88,12 +89,14 @@ async def test_send_weekly_reminders_only_notifies_missing(notification_service,
 
     bot_mock.send_message.assert_awaited_once_with(
         2,
-        "📝 *Время для еженедельного отчета!*\n\n"
-        "Пожалуйста, заполни отчет по форме:\n"
-        "• На каком сейчас этапе? (этап + тема)\n"
-        "• Что планируешь делать?\n"
-        "• Есть ли проблемы или вопросы?\n\n"
-        "Используй кнопку '📝 Отправить отчет' для начала заполнения.",
+        text_utils.escape_markdown(
+            "📝 *Время для еженедельного отчета!*\n\n"
+            "Пожалуйста, заполни отчет по форме:\n"
+            "• На каком сейчас этапе? (этап + тема)\n"
+            "• Что планируешь делать?\n"
+            "• Есть ли проблемы или вопросы?\n\n"
+            "Используй кнопку '📝 Отправить отчет' для начала заполнения."
+        ),
     )
 
 
@@ -257,4 +260,37 @@ async def test_format_user_name_handles_only_last_name(notification_service):
     )
 
     assert result == "ivan"
+
+
+@pytest.mark.asyncio
+async def test_send_weekly_reminders_retries_transient_error(notification_service, bot_mock, db_mock, monkeypatch):
+    db_mock.get_all_active_users.return_value = [
+        {"user_id": 1},
+    ]
+    db_mock.get_reports_for_current_week.return_value = []
+    bot_mock.send_message.side_effect = [Exception("Timeout"), None]
+    monkeypatch.setattr("notifications.asyncio.sleep", AsyncMock())
+
+    await notification_service.send_weekly_reminders()
+
+    assert bot_mock.send_message.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_send_daily_missing_report_reminders_only_notifies_missing(notification_service, bot_mock, db_mock):
+    db_mock.get_all_active_users.return_value = [
+        {"user_id": 1},
+        {"user_id": 2},
+    ]
+    db_mock.get_reports_for_current_week.side_effect = [[], [{"dummy": 1}]]
+
+    await notification_service.send_daily_missing_report_reminders()
+
+    bot_mock.send_message.assert_awaited_once_with(
+        1,
+        text_utils.escape_markdown(
+            "🔔 *Напоминание об отчете!*\n\n"
+            "Мы ждем твой еженедельный отчет. Заполни форму, чтобы поделиться прогрессом."
+        ),
+    )
 

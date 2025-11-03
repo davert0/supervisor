@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
 from aiogram import Bot
 from database import Database
 from text_utils import escape_markdown
+import text_utils
 
 logger = logging.getLogger(__name__)
 
@@ -75,27 +77,64 @@ class NotificationService:
             logger.error(f"Не удалось уведомить ученика {student_id}: {e}")
 
     async def send_weekly_reminders(self):
-        """Отправляет еженедельные напоминания ученикам"""
+        recipients = await self._get_students_without_weekly_report()
+        if not recipients:
+            return
+        message = text_utils.escape_markdown(
+            "📝 *Время для еженедельного отчета!*\n\n"
+            "Пожалуйста, заполни отчет по форме:\n"
+            "• На каком сейчас этапе? (этап + тема)\n"
+            "• Что планируешь делать?\n"
+            "• Есть ли проблемы или вопросы?\n\n"
+            "Используй кнопку '📝 Отправить отчет' для начала заполнения."
+        )
+        await self._deliver_reminders(recipients, message)
+
+    async def send_daily_missing_report_reminders(self):
+        recipients = await self._get_students_without_weekly_report()
+        if not recipients:
+            return
+        message = text_utils.escape_markdown(
+            "🔔 *Напоминание об отчете!*\n\n"
+            "Мы ждем твой еженедельный отчет. Заполни форму, чтобы поделиться прогрессом."
+        )
+        await self._deliver_reminders(recipients, message)
+
+    async def _deliver_reminders(self, recipients, message):
+        tasks = [self._send_with_retry(user_id, message) for user_id in recipients]
+        await asyncio.gather(*tasks)
+
+    async def _get_students_without_weekly_report(self):
         users = await self.db.get_all_active_users()
-        
+        result = []
         for user in users:
-            # Проверяем, есть ли отчет за текущую неделю
-            current_week_reports = await self.db.get_reports_for_current_week(user['user_id'])
-            
-            # Отправляем напоминание только если нет отчета за текущую неделю
-            if not current_week_reports:
-                try:
-                    await self.bot.send_message(
-                        user['user_id'],
-                        "📝 *Время для еженедельного отчета!*\n\n"
-                        "Пожалуйста, заполни отчет по форме:\n"
-                        "• На каком сейчас этапе? (этап + тема)\n"
-                        "• Что планируешь делать?\n"
-                        "• Есть ли проблемы или вопросы?\n\n"
-                        "Используй кнопку '📝 Отправить отчет' для начала заполнения."
-                    )
-                except Exception as e:
-                    logger.error(f"Не удалось отправить сообщение пользователю {user['user_id']}: {e}")
+            reports = await self.db.get_reports_for_current_week(user['user_id'])
+            if not reports:
+                result.append(user['user_id'])
+        return result
+
+    async def _send_with_retry(self, user_id, message, retry_delay=300):
+        while True:
+            try:
+                await self.bot.send_message(user_id, message)
+                return
+            except Exception as error:
+                if not self._should_retry(error):
+                    logger.error(f"Не удалось отправить сообщение пользователю {user_id}: {error}")
+                    return
+                logger.warning(f"Повторная попытка отправки сообщения пользователю {user_id}: {error}")
+                await asyncio.sleep(retry_delay)
+
+    def _should_retry(self, error):
+        text = str(error).lower()
+        fatal_markers = (
+            "blocked",
+            "forbidden",
+            "chat not found",
+            "user is deactivated",
+            "bot was kicked",
+        )
+        return not any(marker in text for marker in fatal_markers)
 
     async def send_curator_missing_reports_notifications(self):
         """Отправляет кураторам уведомления о неотправленных отчетах их учеников"""

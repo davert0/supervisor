@@ -17,12 +17,13 @@ class Scheduler:
                 current_weekday = current_time.weekday()  # 0 = понедельник, 2 = среда
                 current_hour = current_time.hour
                 
-                # Отправляем напоминания ученикам по понедельникам в 10:00
                 if current_weekday == 0 and current_hour == 10:
                     await self.notification_service.send_weekly_reminders()
                     logger.info("Отправлены еженедельные напоминания ученикам")
+                if current_weekday in {1, 2, 3, 4, 5, 6} and current_hour == 10:
+                    await self.notification_service.send_daily_missing_report_reminders()
+                    logger.info("Отправлены ежедневные напоминания ученикам без отчета")
                 
-                # Отправляем уведомления кураторам по средам в 14:00
                 if current_weekday == 2 and current_hour == 14:
                     await self.notification_service.send_curator_missing_reports_notifications()
                     logger.info("Отправлены уведомления кураторам о неотправленных отчетах")
