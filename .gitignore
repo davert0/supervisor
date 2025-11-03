@@ -2,3 +2,4 @@
 venv
 .venv
 reports.db
+backups/
