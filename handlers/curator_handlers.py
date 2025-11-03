@@ -228,10 +228,34 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
             await notification_service.notify_student_report_read(report['user_id'], report)
         
         await callback.answer("✅ Отчет отмечен как прочитанный!")
-        await callback.message.edit_text(
-            callback.message.text + "\n\n✅ *ПРОЧИТАНО*",
-            reply_markup=None
-        )
+
+        if report:
+            student_profile = await db.get_user_profile(report['user_id'])
+            if student_profile and (student_profile.get('first_name') or student_profile.get('last_name')):
+                student_name_raw = f"{student_profile.get('first_name') or ''} {student_profile.get('last_name') or ''}".strip()
+            elif student_profile and student_profile.get('username'):
+                student_name_raw = student_profile['username']
+            else:
+                student_name_raw = f"ID: {report['user_id']}"
+            student_name = escape_markdown(student_name_raw)
+            date = datetime.fromisoformat(report['created_at']).strftime('%d.%m.%Y %H:%M')
+            stage = escape_markdown(report['current_stage'])
+            plans = escape_markdown(report['plans'])
+            problems = escape_markdown(report['problems'])
+            message_text = (
+                f"📝 *Отчет от {student_name}*\n"
+                f"📅 {date}\n\n"
+                f"🎯 *Этап:* {stage}\n"
+                f"📋 *Планы:* {plans}\n"
+                f"❓ *Проблемы:* {problems}\n\n"
+                f"✅ *ПРОЧИТАНО*"
+            )
+            await callback.message.edit_text(message_text, reply_markup=None)
+        else:
+            await callback.message.edit_text(
+                escape_markdown(callback.message.text) + "\n\n✅ *ПРОЧИТАНО*",
+                reply_markup=None
+            )
 
     @dp.callback_query(lambda c: c.data.startswith('view_reports_'))
     async def view_student_reports(callback: CallbackQuery):
