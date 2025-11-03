@@ -19,6 +19,21 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         resize_keyboard=True,
         one_time_keyboard=False
     )
+
+    BACK_BUTTON_TEXT = "⬅️ Назад"
+
+    back_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BACK_BUTTON_TEXT)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+    async def handle_back_navigation(message: Message, state: FSMContext) -> bool:
+        if message.text == BACK_BUTTON_TEXT:
+            await state.clear()
+            await message.answer("↩️ Возвращаю режим куратора.", reply_markup=curator_keyboard)
+            return True
+        return False
     
     @dp.message(Command("curator"))
     async def curator_handler(message: Message):
@@ -57,28 +72,34 @@ def register_curator_handlers(dp: Dispatcher, db: Database, notification_service
         await message.answer(
             "👤 *Добавление ученика*\n\n"
             "Отправь ID ученика (число), которого хочешь добавить к себе.\n"
-            "Ученик должен сначала зарегистрироваться через /start"
+            "Ученик должен сначала зарегистрироваться через /start.\n\n"
+            f"Для возврата нажми '{BACK_BUTTON_TEXT}'.",
+            reply_markup=back_keyboard
         )
 
     @dp.message(CuratorStates.waiting_for_student_id)
     async def process_student_id(message: Message, state: FSMContext):
+        if await handle_back_navigation(message, state):
+            return
+
         try:
             student_id = int(message.text)
-            curator_id = message.from_user.id
-            
-            await db.add_curator_student_relation(curator_id, student_id)
-            await state.clear()
-            
-            await message.answer(
-                f"✅ Ученик с ID {student_id} добавлен к тебе!\n"
-                f"Теперь ты будешь получать уведомления о его отчетах."
-            )
-            
-            # Уведомляем ученика
-            await notification_service.notify_student_curator_assigned(student_id)
-                
         except ValueError:
-            await message.answer("❌ Пожалуйста, отправь корректный ID ученика (число).")
+            await message.answer("❌ Пожалуйста, отправь корректный ID ученика (число).", reply_markup=back_keyboard)
+            return
+
+        curator_id = message.from_user.id
+
+        await db.add_curator_student_relation(curator_id, student_id)
+        await state.clear()
+
+        await message.answer(
+            f"✅ Ученик с ID {student_id} добавлен к тебе!\n"
+            f"Теперь ты будешь получать уведомления о его отчетах.",
+            reply_markup=curator_keyboard
+        )
+        
+        await notification_service.notify_student_curator_assigned(student_id)
 
     @dp.message(Command("my_students"))
     async def my_students_handler(message: Message):

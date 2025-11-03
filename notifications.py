@@ -77,31 +77,37 @@ class NotificationService:
 
     async def send_curator_missing_reports_notifications(self):
         """Отправляет кураторам уведомления о неотправленных отчетах их учеников"""
-        curators = await self.db.get_all_curators()
-        
-        for curator in curators:
-            students = await self.db.get_curator_students(curator['user_id'])
-            missing_reports_students = []
-            
-            for student in students:
-                # Проверяем, есть ли отчет за текущую неделю
-                current_week_reports = await self.db.get_reports_for_current_week(student['user_id'])
-                
-                if not current_week_reports:
-                    # Формируем имя студента
-                    student_name = f"{student['first_name']} {student['last_name']}" if student['first_name'] and student['last_name'] else student['username'] or f"ID: {student['user_id']}"
-                    missing_reports_students.append(student_name)
-            
-            # Отправляем уведомление куратору, если есть студенты без отчетов
-            if missing_reports_students:
-                try:
-                    students_list = "\n".join([f"• {name}" for name in missing_reports_students])
-                    await self.bot.send_message(
-                        curator['user_id'],
-                        f"⚠️ *Уведомление куратора*\n\n"
-                        f"Следующие ученики не отправили отчет за эту неделю:\n\n"
-                        f"{students_list}\n\n"
-                        f"Рекомендуется связаться с ними для выяснения причин."
-                    )
-                except Exception as e:
-                    logger.error(f"Не удалось отправить уведомление куратору {curator['user_id']}: {e}")
+        missing_records = await self.db.get_students_missing_weekly_reports()
+        if not missing_records:
+            return
+
+        def build_name(first_name, last_name, username, fallback_id):
+            if first_name and last_name:
+                return f"{first_name} {last_name}"
+            if username:
+                return username
+            return f"ID: {fallback_id}"
+
+        students_by_curator = {}
+        for record in missing_records:
+            curator_id = record['curator_id']
+            student_name = build_name(
+                record['student_first_name'],
+                record['student_last_name'],
+                record['student_username'],
+                record['student_id']
+            )
+            students_by_curator.setdefault(curator_id, []).append(student_name)
+
+        for curator_id, students in students_by_curator.items():
+            students_list = "\n".join([f"• {name}" for name in students])
+            try:
+                await self.bot.send_message(
+                    curator_id,
+                    f"⚠️ *Уведомление куратора*\n\n"
+                    f"Следующие ученики не отправили отчет за эту неделю:\n\n"
+                    f"{students_list}\n\n"
+                    f"Рекомендуется связаться с ними для выяснения причин."
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление куратору {curator_id}: {e}")

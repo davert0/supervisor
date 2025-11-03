@@ -7,6 +7,44 @@ from states import ReportStates
 from database import Database
 from notifications import NotificationService
 
+STAGE_OPTIONS = [
+    (
+        "stage_block1",
+        "📚 Изучение материалов - Блок 1. Основы языка",
+        "Изучение материалов - Блок 1. Основы языка"
+    ),
+    (
+        "stage_block2",
+        "📚 Изучение материалов - Блок 2. ООП",
+        "Изучение материалов - Блок 2. ООП"
+    ),
+    (
+        "stage_block3",
+        "📚 Изучение материалов - Блок 3. Конкурентность",
+        "Изучение материалов - Блок 3. Конкурентность"
+    ),
+    (
+        "stage_block4",
+        "📚 Изучение материалов - Блок 4. Инфраструктура",
+        "Изучение материалов - Блок 4. Инфраструктура"
+    ),
+    (
+        "stage_legend",
+        "📖 Изучение легенды",
+        "Изучение легенды"
+    ),
+    (
+        "stage_fake_resume",
+        "💼 Поиск работы на тренировочном резюме",
+        "Поиск работы на фейк резюме"
+    ),
+    (
+        "stage_real_resume",
+        "💼 Поиск работы на реальном резюме",
+        "Поиск работы на реальном резюме"
+    )
+]
+
 def register_student_handlers(dp: Dispatcher, db: Database, notification_service: NotificationService):
     
     # Создаем клавиатуру для учеников
@@ -94,13 +132,8 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
         # Создаем клавиатуру с предустановленными блоками
         stage_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📚 Изучение материалов - Блок 1. Основы языка", callback_data="stage_block1")],
-                [InlineKeyboardButton(text="📚 Изучение материалов - Блок 2. ООП", callback_data="stage_block2")],
-                [InlineKeyboardButton(text="📚 Изучение материалов - Блок 3. Конкурентность", callback_data="stage_block3")],
-                [InlineKeyboardButton(text="📚 Изучение материалов - Блок 4. Инфраструктура", callback_data="stage_block4")],
-                [InlineKeyboardButton(text="📖 Изучение легенды", callback_data="stage_legend")],
-                [InlineKeyboardButton(text="💼 Поиск работы на тренировочном резюме", callback_data="stage_fake_resume")],
-                [InlineKeyboardButton(text="💼 Поиск работы на реальном резюме", callback_data="stage_real_resume")]
+                [InlineKeyboardButton(text=label, callback_data=callback)]
+                for callback, label, _ in STAGE_OPTIONS
             ]
         )
         
@@ -160,15 +193,7 @@ def register_student_handlers(dp: Dispatcher, db: Database, notification_service
     # Обработчик выбора этапа
     @dp.callback_query(lambda c: c.data.startswith('stage_'))
     async def process_stage_selection(callback, state: FSMContext):
-        stage_mapping = {
-            'stage_block1': 'Изучение материалов - Блок 1. Основы языка',
-            'stage_block2': 'Изучение материалов - Блок 2. ООП',
-            'stage_block3': 'Изучение материалов - Блок 3. Конкурентность',
-            'stage_block4': 'Изучение материалов - Блок 4. Инфраструктура',
-            'stage_legend': 'Изучение легенды',
-            'stage_fake_resume': 'Поиск работы на фейк резюме',
-            'stage_real_resume': 'Поиск работы на реальном резюме'
-        }
+        stage_mapping = {callback: value for callback, _, value in STAGE_OPTIONS}
         
         selected_stage = stage_mapping.get(callback.data)
         if selected_stage:

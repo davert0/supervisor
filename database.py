@@ -1,6 +1,6 @@
 import os
 import aiosqlite
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from config import DATABASE_PATH
 
@@ -109,8 +109,6 @@ class Database:
 
     async def get_reports_for_current_week(self, user_id: int) -> List[dict]:
         """Получает отчеты пользователя за текущую календарную неделю"""
-        from datetime import datetime, timedelta
-        
         # Находим начало текущей недели (понедельник)
         today = datetime.now().date()
         days_since_monday = today.weekday()  # 0 = понедельник, 6 = воскресенье
@@ -126,6 +124,46 @@ class Database:
             ''', (user_id, week_start_datetime.isoformat()))
             rows = await cursor.fetchall()
             return [{'current_stage': row[0], 'plans': row[1], 'problems': row[2], 'created_at': row[3]} for row in rows]
+
+    async def get_students_missing_weekly_reports(self) -> List[dict]:
+        today = datetime.now().date()
+        days_since_monday = today.weekday()
+        week_start = today - timedelta(days=days_since_monday)
+        week_start_datetime = datetime.combine(week_start, datetime.min.time())
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute('''
+                select
+                    csr.curator_id,
+                    c.username,
+                    c.first_name,
+                    c.last_name,
+                    s.user_id,
+                    s.username,
+                    s.first_name,
+                    s.last_name
+                from curator_student_relations csr
+                join users c on csr.curator_id = c.user_id and c.is_active = true
+                join users s on csr.student_id = s.user_id and s.is_active = true
+                left join reports r on r.user_id = s.user_id and r.created_at >= ?
+                group by csr.curator_id, c.username, c.first_name, c.last_name, s.user_id, s.username, s.first_name, s.last_name
+                having max(r.created_at) is null
+                order by csr.curator_id, s.first_name, s.last_name
+            ''', (week_start_datetime.isoformat(),))
+            rows = await cursor.fetchall()
+            return [
+                {
+                    'curator_id': row[0],
+                    'curator_username': row[1],
+                    'curator_first_name': row[2],
+                    'curator_last_name': row[3],
+                    'student_id': row[4],
+                    'student_username': row[5],
+                    'student_first_name': row[6],
+                    'student_last_name': row[7]
+                }
+                for row in rows
+            ]
 
     async def get_last_stage_choice(self, user_id: int) -> Optional[str]:
         """Получает последний выбранный этап пользователя"""
@@ -336,5 +374,10 @@ class Database:
             await db.commit()
 
     async def is_admin(self, user_id: int) -> bool:
-        admin_ids = [int(os.getenv('ADMIN_ID'))]  
-        return user_id in admin_ids
+        admin_id_value = os.getenv('ADMIN_ID')
+        if not admin_id_value:
+            return False
+        try:
+            return user_id == int(admin_id_value)
+        except ValueError:
+            return False
